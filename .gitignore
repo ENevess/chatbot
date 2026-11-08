@@ -1,0 +1,30 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+venv/
+env/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+*.egg-info/
+dist/
+build/
+
+# Environment & Secrets (Section 4 & 11: Never commit secrets)
+.env
+.env.*
+!.env.example
+
+# Local Databases & Data (Section 4: Never commit real data)
+data/*.db
+data/*.sqlite
+data/*.sqlite3
+*.db
+*.sqlite
+*.sqlite3
+
+# Audit & Runtime Logs (Section 7)
+logs/*.log
+logs/*.jsonl

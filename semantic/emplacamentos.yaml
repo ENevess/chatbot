@@ -1,0 +1,436 @@
+# Camada Semantica de Emplacamentos (v0.1.0)
+version: "0.1.0"
+owner: "Diretoria e Gerencia de Emplacamentos"
+updated_at: "2026-11-08"
+description: >
+  Catalogo semantico oficial para consultas agregadas de emplacamentos de caminhoes
+  pesados e semi-pesados (veiculos novos desde 2019).
+
+governance:
+  min_k_anonymity: 5
+  require_explicit_period: true
+  ambiguity_rules:
+    period_missing: >
+      O período da consulta não foi informado. Qual período você deseja consultar
+      (por exemplo: este mês, último mês fechado, ou um ano/mês específico)?
+    city_type_ambiguous: >
+      Você deseja analisar pelo município de emplacamento do veículo ou pelo
+      município de cadastro do cliente?
+    dealer_type_ambiguous: >
+      Você deseja analisar pelo Dealer DAF (concessionária da rede DAF) ou pelo
+      Dealer de emplacamento (concessionária multimarca onde ocorreu o emplacamento)?
+
+entities:
+  emplacamento:
+    table: emplacamento
+    alias: e
+    primary_key: id_emplacamento
+    description: "Fato central de emplacamento de chassis novos (desde 2019)."
+    allowed_columns:
+      - id_emplacamento
+      - data_emplacamento
+      - id_chassi
+      - id_cidade
+      - id_cliente
+      - id_dealer_emplacamento
+      - id_dealer_daf
+
+  chassi:
+    table: chassi
+    alias: ch
+    primary_key: id_chassi
+    description: "Cadastro de chassis novos vinculados ao modelo."
+    allowed_columns:
+      - id_chassi
+      - id_modelo
+      - situacao_chassi
+      - ano_modelo
+      - ano_fabricacao
+
+  modelo:
+    table: modelo
+    alias: m
+    primary_key: id_modelo
+    description: "Catálogo de modelos ANFAVEA, fabricantes (marcas) e segmentos."
+    allowed_columns:
+      - id_modelo
+      - modelo
+      - fabricante
+      - segmento
+      - subsegmento
+      - combustivel
+      - potencia
+      - tracao_anfavea
+      - segmento_anfavea
+
+  cidade_emplacamento:
+    table: cidade
+    alias: cid_emp
+    primary_key: id_cidade
+    description: "Município onde o emplacamento foi realizado."
+    allowed_columns:
+      - id_cidade
+      - nome_cidade
+      - UF
+      - codigo_cidade
+      - microrregiao
+      - mesorregiao
+
+  cliente:
+    table: cliente
+    alias: cli
+    primary_key: id_cliente
+    description: "Entidade de vínculo para dimensões agregadas do comprador (sem exposição de PII)."
+    allowed_columns:
+      - id_cliente
+      - id_cidade
+      - id_cnae
+      - tipo_pessoa
+      - porte_empresa
+
+  cidade_cliente:
+    table: cidade
+    alias: cid_cli
+    primary_key: id_cidade
+    description: "Município de domicílio/cadastro do cliente comprador."
+    allowed_columns:
+      - id_cidade
+      - nome_cidade
+      - UF
+      - codigo_cidade
+      - microrregiao
+      - mesorregiao
+
+  dealer_daf:
+    table: dealer_daf
+    alias: ddaf
+    primary_key: id_dealer_daf
+    description: "Concessionárias da rede DAF (Dealer DAF / Dealer da DAF)."
+    allowed_columns:
+      - id_dealer_daf
+      - nome_dealer
+      - loja
+
+  dealer_emplacamento:
+    table: dealer_emplacamento
+    alias: demp
+    primary_key: id_dealer_emplacamento
+    description: "Concessionárias multimarcas responsáveis pelo emplacamento."
+    allowed_columns:
+      - id_dealer_emplacamento
+      - nome_dealer
+
+  cnae:
+    table: cnae
+    alias: cn
+    primary_key: id_cnae
+    description: "Classificação Nacional de Atividades Econômicas do cliente."
+    allowed_columns:
+      - id_cnae
+      - nome_cnae
+
+relationships:
+  - name: emplacamento_to_chassi
+    from_entity: emplacamento
+    to_entity: chassi
+    join_type: INNER
+    join_on: "e.id_chassi = ch.id_chassi"
+
+  - name: chassi_to_modelo
+    from_entity: chassi
+    to_entity: modelo
+    join_type: INNER
+    join_on: "ch.id_modelo = m.id_modelo"
+
+  - name: emplacamento_to_cidade_emplacamento
+    from_entity: emplacamento
+    to_entity: cidade_emplacamento
+    join_type: LEFT
+    join_on: "e.id_cidade = cid_emp.id_cidade"
+
+  - name: emplacamento_to_cliente
+    from_entity: emplacamento
+    to_entity: cliente
+    join_type: INNER
+    join_on: "e.id_cliente = cli.id_cliente"
+
+  - name: cliente_to_cidade_cliente
+    from_entity: cliente
+    to_entity: cidade_cliente
+    join_type: LEFT
+    join_on: "cli.id_cidade = cid_cli.id_cidade"
+
+  - name: emplacamento_to_dealer_daf
+    from_entity: emplacamento
+    to_entity: dealer_daf
+    join_type: LEFT
+    join_on: "e.id_dealer_daf = ddaf.id_dealer_daf"
+
+  - name: emplacamento_to_dealer_emplacamento
+    from_entity: emplacamento
+    to_entity: dealer_emplacamento
+    join_type: LEFT
+    join_on: "e.id_dealer_emplacamento = demp.id_dealer_emplacamento"
+
+  - name: cliente_to_cnae
+    from_entity: cliente
+    to_entity: cnae
+    join_type: LEFT
+    join_on: "cli.id_cnae = cn.id_cnae"
+
+dimensions:
+  # Dimensões de Tempo
+  ano:
+    entity: emplacamento
+    sql_expression: "CAST(strftime('%Y', e.data_emplacamento) AS INTEGER)"
+    description: "Ano do emplacamento (ex.: 2019 a 2026)."
+    synonyms: ["ano", "anual", "por ano"]
+
+  mes:
+    entity: emplacamento
+    sql_expression: "strftime('%Y-%m', e.data_emplacamento)"
+    description: "Mês/Ano do emplacamento no formato YYYY-MM."
+    synonyms: ["mes", "mês", "mensal", "ano mes", "período mensal"]
+
+  trimestre:
+    entity: emplacamento
+    sql_expression: >
+      strftime('%Y', e.data_emplacamento) || '-T' ||
+      CAST(((CAST(strftime('%m', e.data_emplacamento) AS INTEGER) - 1) / 3) + 1 AS TEXT)
+    description: "Trimestre do emplacamento no formato YYYY-T1..T4."
+    synonyms: ["trimestre", "trimestral", "quarter"]
+
+  # Dimensões de Produto / Marca / Segmento
+  marca:
+    entity: modelo
+    required_joins: ["emplacamento_to_chassi", "chassi_to_modelo"]
+    sql_expression: "UPPER(TRIM(m.fabricante))"
+    description: "Fabricante / marca do caminhão (AGRALE, DAF, IVECO, SCANIA, MERCEDEZ-BENZ, VOLVO, VOLKSWAGEN)."
+    synonyms: ["marca", "fabricante", "montadora", "marcas"]
+
+  modelo:
+    entity: modelo
+    required_joins: ["emplacamento_to_chassi", "chassi_to_modelo"]
+    sql_expression: "UPPER(TRIM(m.modelo))"
+    description: "Modelo comercial do caminhão segundo nomenclatura ANFAVEA."
+    synonyms: ["modelo", "modelos", "veículo"]
+
+  segmento:
+    entity: modelo
+    required_joins: ["emplacamento_to_chassi", "chassi_to_modelo"]
+    sql_expression: "UPPER(TRIM(m.segmento))"
+    description: "Segmento oficial do caminhão definido na tabela de modelo (PESADO, SEMI-PESADO)."
+    synonyms: ["segmento", "categoria", "porte do caminhão", "pesado", "semi-pesado"]
+
+  subsegmento:
+    entity: modelo
+    required_joins: ["emplacamento_to_chassi", "chassi_to_modelo"]
+    sql_expression: "UPPER(TRIM(m.subsegmento))"
+    description: "Subsegmento de aplicação do modelo."
+    synonyms: ["subsegmento", "aplicação", "vocação"]
+
+  tracao:
+    entity: modelo
+    required_joins: ["emplacamento_to_chassi", "chassi_to_modelo"]
+    sql_expression: "UPPER(TRIM(COALESCE(m.tracao_anfavea, 'Não informado')))"
+    description: "Configuração de tração ANFAVEA (4X2, 6X2, 6X4, 8X2, 8X4)."
+    synonyms: ["tração", "tracao", "eixos"]
+
+  # Dimensões Geográficas (Emplacamento)
+  municipio_emplacamento:
+    entity: cidade_emplacamento
+    required_joins: ["emplacamento_to_cidade_emplacamento"]
+    sql_expression: >
+      CASE
+        WHEN cid_emp.nome_cidade IS NULL
+          OR UPPER(TRIM(cid_emp.nome_cidade)) IN ('NAO INFORMADO', 'NÃO INFORMADO', '')
+        THEN 'Não informado'
+        ELSE TRIM(cid_emp.nome_cidade)
+      END
+    description: "Município onde ocorreu o emplacamento (tratando 'Não informado' e espaços)."
+    synonyms: ["município de emplacamento", "cidade de emplacamento", "local de emplacamento"]
+
+  uf_emplacamento:
+    entity: cidade_emplacamento
+    required_joins: ["emplacamento_to_cidade_emplacamento"]
+    sql_expression: >
+      CASE
+        WHEN cid_emp.UF IS NULL
+          OR UPPER(TRIM(cid_emp.UF)) IN ('NI', 'NAO INFORMADO', 'NÃO INFORMADO', '')
+        THEN 'Não informado'
+        ELSE UPPER(TRIM(cid_emp.UF))
+      END
+    description: "UF do município de emplacamento (ou 'Não informado' para qualificação)."
+    synonyms: ["uf", "estado", "uf de emplacamento", "estado de emplacamento"]
+
+  regiao_emplacamento:
+    entity: cidade_emplacamento
+    required_joins: ["emplacamento_to_cidade_emplacamento"]
+    sql_expression: >
+      CASE
+        WHEN UPPER(TRIM(cid_emp.UF)) IN ('PR', 'SC', 'RS') THEN 'Sul'
+        WHEN UPPER(TRIM(cid_emp.UF)) IN ('SP', 'RJ', 'MG', 'ES') THEN 'Sudeste'
+        WHEN UPPER(TRIM(cid_emp.UF)) IN ('MT', 'MS', 'GO', 'DF') THEN 'Centro-Oeste'
+        WHEN UPPER(TRIM(cid_emp.UF)) IN ('BA', 'PE', 'CE', 'MA', 'PI', 'RN', 'PB', 'AL', 'SE') THEN 'Nordeste'
+        WHEN UPPER(TRIM(cid_emp.UF)) IN ('PA', 'AM', 'TO', 'RO', 'AC', 'RR', 'AP') THEN 'Norte'
+        ELSE 'Não informado'
+      END
+    description: >
+      Macrorregião IBGE do emplacamento (Norte, Nordeste, Centro-Oeste, Sudeste, Sul)
+      mais a 6ª categoria 'Não informado' para qualificação de dados.
+    synonyms: ["região", "regiao", "região do país", "região de emplacamento", "macrorregião"]
+
+  # Dimensões Geográficas (Cliente)
+  municipio_cliente:
+    entity: cidade_cliente
+    required_joins: ["emplacamento_to_cliente", "cliente_to_cidade_cliente"]
+    sql_expression: >
+      CASE
+        WHEN cid_cli.nome_cidade IS NULL
+          OR UPPER(TRIM(cid_cli.nome_cidade)) IN ('NAO INFORMADO', 'NÃO INFORMADO', '')
+        THEN 'Não informado'
+        ELSE TRIM(cid_cli.nome_cidade)
+      END
+    description: "Município de domicílio do cliente comprador."
+    synonyms: ["município do cliente", "cidade do cliente", "domicílio do cliente"]
+
+  uf_cliente:
+    entity: cidade_cliente
+    required_joins: ["emplacamento_to_cliente", "cliente_to_cidade_cliente"]
+    sql_expression: >
+      CASE
+        WHEN cid_cli.UF IS NULL
+          OR UPPER(TRIM(cid_cli.UF)) IN ('NI', 'NAO INFORMADO', 'NÃO INFORMADO', '')
+        THEN 'Não informado'
+        ELSE UPPER(TRIM(cid_cli.UF))
+      END
+    description: "UF de domicílio do cliente comprador."
+    synonyms: ["uf do cliente", "estado do cliente"]
+
+  regiao_cliente:
+    entity: cidade_cliente
+    required_joins: ["emplacamento_to_cliente", "cliente_to_cidade_cliente"]
+    sql_expression: >
+      CASE
+        WHEN UPPER(TRIM(cid_cli.UF)) IN ('PR', 'SC', 'RS') THEN 'Sul'
+        WHEN UPPER(TRIM(cid_cli.UF)) IN ('SP', 'RJ', 'MG', 'ES') THEN 'Sudeste'
+        WHEN UPPER(TRIM(cid_cli.UF)) IN ('MT', 'MS', 'GO', 'DF') THEN 'Centro-Oeste'
+        WHEN UPPER(TRIM(cid_cli.UF)) IN ('BA', 'PE', 'CE', 'MA', 'PI', 'RN', 'PB', 'AL', 'SE') THEN 'Nordeste'
+        WHEN UPPER(TRIM(cid_cli.UF)) IN ('PA', 'AM', 'TO', 'RO', 'AC', 'RR', 'AP') THEN 'Norte'
+        ELSE 'Não informado'
+      END
+    description: "Macrorregião IBGE de domicílio do cliente comprador (com 6ª região 'Não informado')."
+    synonyms: ["região do cliente"]
+
+  # Dimensões de Dealers (Distinção obrigatória conforme regra 6)
+  dealer_daf:
+    entity: dealer_daf
+    required_joins: ["emplacamento_to_dealer_daf"]
+    sql_expression: "COALESCE(TRIM(ddaf.nome_dealer) || ' - ' || TRIM(ddaf.loja), 'Não vinculado a Dealer DAF')"
+    description: "Concessionária da rede DAF (Dealer DAF / Dealer da DAF)."
+    synonyms: ["dealer daf", "dealer da daf", "concessionária daf", "rede daf"]
+
+  dealer_emplacamento:
+    entity: dealer_emplacamento
+    required_joins: ["emplacamento_to_dealer_emplacamento"]
+    sql_expression: "COALESCE(TRIM(demp.nome_dealer), 'Não informado')"
+    description: "Concessionária multimarca responsável pelo emplacamento (Dealer de emplacamento)."
+    synonyms: ["dealer de emplacamento", "dealer do emplacamento", "concessionária de emplacamento"]
+
+metrics:
+  volume_emplacamentos:
+    name: "Volume de Emplacamentos"
+    definition: "Quantidade total de emplacamentos de caminhões novos registrados no período (COUNT(id_emplacamento))."
+    formula: "COUNT(e.id_emplacamento)"
+    unit: "unidades"
+    default_filters: []
+    exceptions: "Não inclui veículos usados/transferências. Suprimido quando contagem < 5 (k-anonimato)."
+    synonyms:
+      - "volume"
+      - "quantidade"
+      - "total de emplacamentos"
+      - "quantos caminhões foram emplacados"
+      - "emplacamentos"
+    numeric_example: "Em outubro de 2026 (último mês fechado), foram emplacados 9.615 caminhões."
+
+  participacao_mercado_marca:
+    name: "Participação de Mercado por Marca (Market Share)"
+    definition: >
+      Percentual de emplacamentos de cada fabricante em relação ao volume total de todas as marcas
+      no mesmo período e recortes (COUNT(id_emplacamento da marca) / COUNT(id_emplacamento total) * 100).
+    formula: "ROUND(COUNT(e.id_emplacamento) * 100.0 / SUM(COUNT(e.id_emplacamento)) OVER (), 2)"
+    unit: "%"
+    required_dimensions: ["marca"]
+    default_filters: []
+    exceptions: "Caso o usuário filtre apenas uma marca na consulta, o denominador continua sendo o total do mercado no período."
+    synonyms:
+      - "market share"
+      - "participação de mercado"
+      - "participação por marca"
+      - "share de marca"
+      - "fatia de mercado"
+    numeric_example: "A marca DAF teve 10,00% de participação de mercado (77.732 de 777.365 emplacamentos)."
+
+  participacao_segmento:
+    name: "Participação por Segmento"
+    definition: >
+      Percentual de emplacamentos de cada segmento (PESADO vs. SEMI-PESADO) sobre o volume total
+      no mesmo período e filtros aplicados (COUNT(id_emplacamento do segmento) / COUNT(id_emplacamento total) * 100).
+    formula: "ROUND(COUNT(e.id_emplacamento) * 100.0 / SUM(COUNT(e.id_emplacamento)) OVER (), 2)"
+    unit: "%"
+    required_dimensions: ["segmento"]
+    default_filters: []
+    exceptions: "Usa diretamente a classificação oficial da coluna modelo.segmento."
+    synonyms:
+      - "participação por segmento"
+      - "share por segmento"
+      - "divisão por segmento"
+      - "percentual pesado e semi-pesado"
+    numeric_example: "O segmento PESADO representou 59,98% dos emplacamentos no período."
+
+  ranking_modelos:
+    name: "Ranking de Modelos"
+    definition: >
+      Classificação decrescente dos modelos de caminhões (modelo.modelo e modelo.fabricante)
+      pelo volume de emplacamentos (COUNT(id_emplacamento)) no período selecionado.
+    formula: "COUNT(e.id_emplacamento)"
+    unit: "unidades"
+    required_dimensions: ["modelo", "marca"]
+    default_order: "DESC"
+    default_limit: 10
+    default_filters: []
+    exceptions: "Modelos com menos de 5 emplacamentos (k < 5) têm o volume suprimido por privacidade."
+    synonyms:
+      - "ranking de modelos"
+      - "modelos mais emplacados"
+      - "top modelos"
+      - "campeões de emplacamento"
+    numeric_example: "1º ACTROS 2651 6X4 (MERCEDEZ-BENZ): 2.180 unidades no período."
+
+  variacao_periodos:
+    name: "Variação entre Períodos"
+    definition: >
+      Comparação absoluta (Volume_atual - Volume_anterior) e percentual
+      (((Volume_atual - Volume_anterior) / Volume_anterior) * 100) do volume de emplacamentos
+      entre dois períodos explícitos (mês contra mês ou ano contra ano).
+    formula: "((volume_atual - volume_anterior) * 100.0) / NULLIF(volume_anterior, 0)"
+    unit: "%"
+    default_filters: []
+    exceptions: "Exige dois períodos definidos (período base e período de comparação). Se volume_anterior = 0, a variação percentual é nula/indefinida."
+    synonyms:
+      - "variação"
+      - "crescimento"
+      - "queda"
+      - "comparação entre períodos"
+      - "mês contra mês"
+      - "ano contra ano"
+      - "mom"
+      - "yoy"
+    numeric_example: "O volume passou de 9.500 para 9.615 unidades (+115 unidades, variação de +1,21%)."
+
+default_filters:
+  situacao_valida:
+    description: "Considera todos os registros da tabela emplacamento (base oficial de veículos novos a partir de 2019)."
+    not_informed_policy: >
+      Registros com cidade/UF 'Não informado' NÃO são excluídos por padrão; são exibidos na 6ª região
+      'Não informado' para que o responsável possa qualificar a informação.

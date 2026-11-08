@@ -1,0 +1,197 @@
+# Conjunto de Perguntas de Referencia (Secao 9 do AGENTS.md)
+# Cobre obrigatoriamente:
+# - volume por periodo (Q001)
+# - volume por regiao (Q002)
+# - volume por segmento (Q003)
+# - volume por marca (Q004)
+# - ranking de modelos (Q005)
+# - participacao de mercado por marca + filtro de segmento (Q006, Q011)
+# - comparacao/variacao entre periodos (Q007)
+# - pergunta ambigua (Q008, Q012)
+# - pergunta fora do escopo (Q009)
+# - pergunta que exige contagem minima / supressao por privacidade k < 5 (Q010)
+
+- id: Q001
+  pergunta: "Quantos caminhões foram emplacados no último mês?"
+  nivel: facil
+  central: true
+  resposta_esperada: "19.418"
+  sql_gabarito: >
+    SELECT COUNT(e.id_emplacamento) AS valor
+    FROM emplacamento e
+    WHERE strftime('%Y-%m', e.data_emplacamento) = '2026-10'
+  comportamento_esperado: responder
+
+- id: Q002
+  pergunta: "Qual o volume de emplacamentos por região em 2025?"
+  nivel: facil
+  central: true
+  resposta_esperada: "Sudeste"
+  sql_gabarito: >
+    SELECT
+      CASE
+        WHEN UPPER(TRIM(cid_emp.UF)) IN ('PR', 'SC', 'RS') THEN 'Sul'
+        WHEN UPPER(TRIM(cid_emp.UF)) IN ('SP', 'RJ', 'MG', 'ES') THEN 'Sudeste'
+        WHEN UPPER(TRIM(cid_emp.UF)) IN ('MT', 'MS', 'GO', 'DF') THEN 'Centro-Oeste'
+        WHEN UPPER(TRIM(cid_emp.UF)) IN ('BA', 'PE', 'CE', 'MA', 'PI', 'RN', 'PB', 'AL', 'SE') THEN 'Nordeste'
+        WHEN UPPER(TRIM(cid_emp.UF)) IN ('PA', 'AM', 'TO', 'RO', 'AC', 'RR', 'AP') THEN 'Norte'
+        ELSE 'Não informado'
+      END AS regiao_emplacamento,
+      COUNT(e.id_emplacamento) AS valor
+    FROM emplacamento e
+    LEFT JOIN cidade cid_emp ON e.id_cidade = cid_emp.id_cidade
+    WHERE strftime('%Y', e.data_emplacamento) = '2025'
+    GROUP BY regiao_emplacamento
+    ORDER BY valor DESC
+  comportamento_esperado: responder
+
+- id: Q003
+  pergunta: "Qual a participação por segmento em 2025?"
+  nivel: facil
+  central: true
+  resposta_esperada: "PESADO"
+  sql_gabarito: >
+    WITH base_agg AS (
+      SELECT UPPER(TRIM(m.segmento)) AS segmento,
+             COUNT(e.id_emplacamento) AS volume
+      FROM emplacamento e
+      INNER JOIN chassi ch ON e.id_chassi = ch.id_chassi
+      INNER JOIN modelo m ON ch.id_modelo = m.id_modelo
+      WHERE strftime('%Y', e.data_emplacamento) = '2025'
+      GROUP BY segmento
+    )
+    SELECT segmento,
+           volume,
+           SUM(volume) OVER () AS volume_total_mercado,
+           ROUND(volume * 100.0 / NULLIF(SUM(volume) OVER (), 0), 2) AS valor
+    FROM base_agg
+    ORDER BY valor DESC
+  comportamento_esperado: responder
+
+- id: Q004
+  pergunta: "Quantos caminhões da SCANIA foram emplacados em 2025?"
+  nivel: facil
+  central: true
+  resposta_esperada: "emplacamentos de caminhões novos"
+  sql_gabarito: >
+    SELECT COUNT(e.id_emplacamento) AS valor
+    FROM emplacamento e
+    INNER JOIN chassi ch ON e.id_chassi = ch.id_chassi
+    INNER JOIN modelo m ON ch.id_modelo = m.id_modelo
+    WHERE strftime('%Y', e.data_emplacamento) = '2025'
+      AND UPPER(TRIM(m.fabricante)) = 'SCANIA'
+  comportamento_esperado: responder
+
+- id: Q005
+  pergunta: "Qual o top 5 ranking de modelos mais emplacados em 2025?"
+  nivel: media
+  central: true
+  resposta_esperada: "1º"
+  sql_gabarito: >
+    SELECT UPPER(TRIM(m.modelo)) AS modelo,
+           UPPER(TRIM(m.fabricante)) AS marca,
+           COUNT(e.id_emplacamento) AS valor
+    FROM emplacamento e
+    INNER JOIN chassi ch ON e.id_chassi = ch.id_chassi
+    INNER JOIN modelo m ON ch.id_modelo = m.id_modelo
+    WHERE strftime('%Y', e.data_emplacamento) = '2025'
+    GROUP BY modelo, marca
+    ORDER BY valor DESC
+    LIMIT 5
+  comportamento_esperado: responder
+
+- id: Q006
+  pergunta: "Qual a participação de mercado da DAF em 2026 apenas no segmento pesado?"
+  nivel: media
+  central: true
+  resposta_esperada: "11,62%"
+  sql_gabarito: >
+    WITH base_agg AS (
+      SELECT UPPER(TRIM(m.fabricante)) AS marca,
+             COUNT(e.id_emplacamento) AS volume
+      FROM emplacamento e
+      INNER JOIN chassi ch ON e.id_chassi = ch.id_chassi
+      INNER JOIN modelo m ON ch.id_modelo = m.id_modelo
+      WHERE strftime('%Y', e.data_emplacamento) = '2026'
+        AND UPPER(TRIM(m.segmento)) = 'PESADO'
+      GROUP BY marca
+    ),
+    shares AS (
+      SELECT marca,
+             volume,
+             SUM(volume) OVER () AS volume_total_mercado,
+             ROUND(volume * 100.0 / NULLIF(SUM(volume) OVER (), 0), 2) AS valor
+      FROM base_agg
+    )
+    SELECT marca, volume, volume_total_mercado, valor
+    FROM shares
+    WHERE marca = 'DAF'
+    ORDER BY valor DESC
+  comportamento_esperado: responder
+
+- id: Q007
+  pergunta: "Qual foi a variação de emplacamentos de 2025 contra 2024?"
+  nivel: media
+  central: true
+  resposta_esperada: "variação"
+  sql_gabarito: >
+    WITH period_totals AS (
+      SELECT
+        SUM(CASE WHEN strftime('%Y', e.data_emplacamento) = '2025' THEN 1 ELSE 0 END) AS volume_atual,
+        SUM(CASE WHEN strftime('%Y', e.data_emplacamento) = '2024' THEN 1 ELSE 0 END) AS volume_anterior
+      FROM emplacamento e
+      WHERE strftime('%Y', e.data_emplacamento) IN ('2025', '2024')
+    )
+    SELECT
+      volume_atual,
+      volume_anterior,
+      (volume_atual - volume_anterior) AS variacao_absoluta,
+      ROUND(((volume_atual - volume_anterior) * 100.0) / NULLIF(volume_anterior, 0), 2) AS valor
+    FROM period_totals
+  comportamento_esperado: responder
+
+- id: Q008
+  pergunta: "Quantos caminhões da VOLVO foram emplacados?"
+  nivel: ambigua
+  central: true
+  resposta_esperada: "período"
+  sql_gabarito: ""
+  comportamento_esperado: esclarecer
+
+- id: Q009
+  pergunta: "Qual a previsão de emplacamentos de caminhões para 2028?"
+  nivel: facil
+  central: true
+  resposta_esperada: "fora do escopo"
+  sql_gabarito: ""
+  comportamento_esperado: recusar
+
+- id: Q010
+  pergunta: "Quantos emplacamentos teve o modelo '14000-S 4X2 V29' em 2020?"
+  nivel: media
+  central: true
+  resposta_esperada: "omitido pela regra de contagem mínima de privacidade"
+  sql_gabarito: >
+    SELECT COUNT(e.id_emplacamento) AS valor
+    FROM emplacamento e
+    INNER JOIN chassi ch ON e.id_chassi = ch.id_chassi
+    INNER JOIN modelo m ON ch.id_modelo = m.id_modelo
+    WHERE strftime('%Y', e.data_emplacamento) = '2020'
+      AND UPPER(TRIM(m.modelo)) = '14000-S 4X2 V29'
+  comportamento_esperado: responder
+
+- id: Q011
+  pergunta: "Qual o volume de emplacamentos por dealer em 2025?"
+  nivel: ambigua
+  central: false
+  resposta_esperada: "Dealer DAF"
+  sql_gabarito: ""
+  comportamento_esperado: esclarecer
+
+- id: Q012
+  pergunta: "Qual foi o faturamento médio das concessionárias em 2025?"
+  nivel: media
+  central: false
+  resposta_esperada: "não existe na camada semântica"
+  sql_gabarito: ""
+  comportamento_esperado: recusar
