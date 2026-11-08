@@ -201,7 +201,7 @@ class MockLLMClient(LLMClient):
         )
 
     def _detect_metric(self, q_lower: str) -> str:
-        if any(w in q_lower for w in ["variação", "variacao", "crescimento", "queda", "contra", "comparado", "vs", "versus", "mom", "yoy"]):
+        if any(w in q_lower for w in ["variação", "variacao", "crescimento", "queda", "contra", "comparado", "compare", "comparar", "vs", "versus", "mom", "yoy"]):
             return "variacao_periodos"
         if any(w in q_lower for w in ["ranking", "mais emplacados", "top ", "campeões", "campeoes"]):
             return "ranking_modelos"
@@ -218,14 +218,35 @@ class MockLLMClient(LLMClient):
         return "volume_emplacamentos"
 
     def _extract_period(self, q_lower: str, is_variation: bool = False) -> PeriodSpec | None:
+        # Variacao entre dois trimestres por extenso (ex.: janeiro e marco de 2025 e janeiro e marco de 2026)
+        years_found = re.findall(r"\b(20(?:19|2[0-6]))\b", q_lower)
+        if is_variation and len(years_found) >= 2:
+            # Ordena do mais recente (value) para o anterior (comparison_value)
+            y_sorted = sorted(set(years_found), reverse=True)
+            if len(y_sorted) >= 2:
+                y_curr, y_prev = y_sorted[0], y_sorted[1]
+            else:
+                y_curr, y_prev = years_found[-1], years_found[0]
+
+            if ("janeiro" in q_lower or "jan" in q_lower) and ("março" in q_lower or "marco" in q_lower):
+                return PeriodSpec(kind="quarter", value=f"{y_curr}-T1", comparison_value=f"{y_prev}-T1")
+            if "abril" in q_lower and "junho" in q_lower:
+                return PeriodSpec(kind="quarter", value=f"{y_curr}-T2", comparison_value=f"{y_prev}-T2")
+            if "julho" in q_lower and "setembro" in q_lower:
+                return PeriodSpec(kind="quarter", value=f"{y_curr}-T3", comparison_value=f"{y_prev}-T3")
+            if "outubro" in q_lower and "dezembro" in q_lower:
+                return PeriodSpec(kind="quarter", value=f"{y_curr}-T4", comparison_value=f"{y_prev}-T4")
+
         # Variacao entre 2 meses explicitos (YYYY-MM vs YYYY-MM)
         months_found = re.findall(r"\b(20(?:19|2[0-6])-(?:0[1-9]|1[0-2]))\b", q_lower)
         if is_variation and len(months_found) >= 2:
             return PeriodSpec(kind="month", value=months_found[0], comparison_value=months_found[1])
 
         # Variacao entre 2 anos explicitos (YYYY vs YYYY)
-        years_found = re.findall(r"\b(20(?:19|2[0-6]))\b", q_lower)
         if is_variation and len(years_found) >= 2:
+            y_sorted = sorted(set(years_found), reverse=True)
+            if len(y_sorted) >= 2:
+                return PeriodSpec(kind="year", value=y_sorted[0], comparison_value=y_sorted[1])
             return PeriodSpec(kind="year", value=years_found[0], comparison_value=years_found[1])
 
         # Regra 2 do dono da base: 'ultimo mes' = ultimo mes fechado; 'este mes' = mes corrente
@@ -289,7 +310,12 @@ class MockLLMClient(LLMClient):
 
         if "por segmento" in q_lower and metric == "volume_emplacamentos":
             dims.append("segmento")
-        if "por marca" in q_lower or "por fabricante" in q_lower:
+        if (
+            "por marca" in q_lower
+            or "por fabricante" in q_lower
+            or "quais fabricantes" in q_lower
+            or "quais marcas" in q_lower
+        ):
             dims.append("marca")
         if "por modelo" in q_lower and metric == "volume_emplacamentos":
             dims.append("modelo")
@@ -370,16 +396,17 @@ class ClaudeLLMClient(LLMClient):
             "   }\n"
             "3. Se o usuário NÃO informar o período na pergunta, retorne intent='clarify' pedindo o período. Não assuma período padrão.\n"
             "4. Se o usuário disser 'último mês', use period.kind='last_closed_month'. Se disser 'este mês', use period.kind='current_month'.\n"
-            "5. Se o usuário pedir 'por dealer/concessionária' sem especificar 'Dealer DAF' vs 'Dealer de emplacamento', retorne intent='clarify'.\n"
-            "6. Se o usuário pedir 'por cidade/município' sem especificar se é do emplacamento ou do cliente, retorne intent='clarify'.\n"
-            "7. Se pedir métrica que não existe no catálogo ou assunto fora do escopo (previsões, usados, dados pessoais/sócios), retorne intent='refuse'.\n"
-            "8. Responda APENAS com o JSON válido, sem markdown.\n\n"
+            "5. Se o usuário comparar períodos como 'janeiro a março de 2025 e janeiro a março de 2026', use metric='variacao_periodos', period={'kind':'quarter', 'value':'2026-T1', 'comparison_value':'2025-T1'}. Se também pedir participação por marca/fabricante, adicione dimensions=['marca'].\n"
+            "6. Se o usuário pedir 'por dealer/concessionária' sem especificar 'Dealer DAF' vs 'Dealer de emplacamento', retorne intent='clarify'.\n"
+            "7. Se o usuário pedir 'por cidade/município' sem especificar se é do emplacamento ou do cliente, retorne intent='clarify'.\n"
+            "8. Se pedir métrica que não existe no catálogo ou assunto fora do escopo (previsões, usados, dados pessoais/sócios), retorne intent='refuse'.\n"
+            "9. Retorne SEMPRE um ÚNICO objeto JSON válido (nunca retorne texto fora do JSON).\n\n"
             f"CATÁLOGO SEMÂNTICO DISPONÍVEL:\n{json.dumps(semantic_summary, ensure_ascii=False, indent=2)}"
         )
 
         return {
             "model": self.model,
-            "max_tokens": 600,
+            "max_tokens": 1024,
             "system": system_prompt,
             "messages": [
                 {"role": "user", "content": question},
@@ -422,10 +449,58 @@ class ClaudeLLMClient(LLMClient):
         ]
         raw_text = "\n".join(text_blocks).strip()
 
-        # Remove cercas markdown ```json se o modelo colocar
-        cleaned_json = re.sub(r"^```(?:json)?\s*|\s*```$", "", raw_text, flags=re.IGNORECASE).strip()
-        parsed = json.loads(cleaned_json)
+        parsed = extract_json_object(raw_text)
+        if parsed is None:
+            # Fallback deterministico local caso o modelo retorne formato nao-JSON
+            return MockLLMClient().interpret_question(question, catalog)
         return QuerySpec.model_validate(parsed)
+
+
+def extract_json_object(raw_text: str) -> dict[str, Any] | None:
+    """Extrai de forma resiliente o primeiro objeto JSON valido de uma resposta de texto do LLM."""
+    cleaned = re.sub(r"^```(?:json)?\s*|\s*```$", "", raw_text.strip(), flags=re.IGNORECASE).strip()
+    if not cleaned:
+        return None
+    try:
+        obj = json.loads(cleaned)
+        if isinstance(obj, dict):
+            return obj
+    except json.JSONDecodeError:
+        pass
+
+    # Procura o primeiro bloco { ... } balanceado dentro do texto
+    start_idx = cleaned.find("{")
+    if start_idx == -1:
+        return None
+
+    depth = 0
+    in_str = False
+    escape = False
+    for idx in range(start_idx, len(cleaned)):
+        ch = cleaned[idx]
+        if escape:
+            escape = False
+            continue
+        if ch == "\\":
+            escape = True
+            continue
+        if ch == '"':
+            in_str = not in_str
+            continue
+        if not in_str:
+            if ch == "{":
+                depth += 1
+            elif ch == "}":
+                depth -= 1
+                if depth == 0:
+                    candidate = cleaned[start_idx : idx + 1]
+                    try:
+                        obj = json.loads(candidate)
+                        if isinstance(obj, dict):
+                            return obj
+                    except json.JSONDecodeError:
+                        return None
+    return None
 
 
 def create_llm_client(provider: str | None = None) -> LLMClient:

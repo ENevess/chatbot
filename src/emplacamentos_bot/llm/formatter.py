@@ -96,7 +96,57 @@ class ResponseFormatter:
         m_key = compiled.metric_key
 
         if m_key == "variacao_periodos":
-            row = visible_rows[0]
+            row0 = visible_rows[0]
+            # Caso agrupado por dimensao (ex.: marca com share e ganho/perda de participacao)
+            if "share_atual" in row0 and len(visible_rows) > 1:
+                dim_col = next(
+                    (k for k in row0 if k not in (
+                        "volume_atual", "volume_anterior", "total_atual", "total_anterior",
+                        "variacao_absoluta", "valor", "share_atual", "share_anterior",
+                        "delta_share_pp", "suprimido_privacidade"
+                    )),
+                    "marca",
+                )
+                tot_atual_int = int(row0.get("total_atual") or 0)
+                tot_ant_int = int(row0.get("total_anterior") or 0)
+                tot_diff = tot_atual_int - tot_ant_int
+                tot_pct = round((tot_diff * 100.0) / tot_ant_int, 2) if tot_ant_int else 0.0
+                tot_sign = "+" if tot_diff >= 0 else ""
+
+                brand_parts: list[str] = []
+                gainers: list[str] = []
+                losers: list[str] = []
+                for r in visible_rows:
+                    label = str(r.get(dim_col))
+                    v_ant = _fmt_int(r.get("volume_anterior"))
+                    v_atu = _fmt_int(r.get("volume_atual"))
+                    yoy = float(r.get("valor") or 0.0)
+                    yoy_sign = "+" if yoy >= 0 else ""
+                    s_ant = _fmt_pct(r.get("share_anterior"))
+                    s_atu = _fmt_pct(r.get("share_atual"))
+                    delta_pp = float(r.get("delta_share_pp") or 0.0)
+                    pp_sign = "+" if delta_pp >= 0 else ""
+                    pp_str = f"{pp_sign}{delta_pp:.2f}".replace(".", ",") + " p.p."
+
+                    brand_parts.append(
+                        f"{label}: {v_ant} para {v_atu} un. (YoY {yoy_sign}{_fmt_pct(yoy)} | Share {s_ant} para {s_atu}, {pp_str})"
+                    )
+                    if delta_pp > 0:
+                        gainers.append(f"{label} ({pp_str})")
+                    elif delta_pp < 0:
+                        losers.append(f"{label} ({pp_str})")
+
+                summary_line = (
+                    f"No comparativo ({compiled.period_label}), o volume total passou de "
+                    f"{_fmt_int(tot_ant_int)} para {_fmt_int(tot_atual_int)} unidades "
+                    f"({tot_sign}{_fmt_int(tot_diff)} un., YoY {tot_sign}{_fmt_pct(tot_pct)}). "
+                    f"Por {dim_col}: {'; '.join(brand_parts)}. "
+                    f"Ganharam participação: {', '.join(gainers) if gainers else 'nenhum'}. "
+                    f"Perderam participação: {', '.join(losers) if losers else 'nenhum'}."
+                )
+                return summary_line
+
+            row = row0
             atual = _fmt_int(row.get("volume_atual"))
             ant = _fmt_int(row.get("volume_anterior"))
             diff = int(row.get("variacao_absoluta") or 0)

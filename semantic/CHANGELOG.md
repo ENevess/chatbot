@@ -2,6 +2,10 @@
 
 Todas as alterações de definições, métricas, dimensões, filtros padrão ou relacionamentos em [semantic/emplacamentos.yaml](file:///e:/testeChat/semantic/emplacamentos.yaml) devem ser registradas neste arquivo (conforme Seção 6 do [AGENTS.md](file:///e:/testeChat/AGENTS.md)).
 
+## [0.1.1] - 2026-11-08
+### Alterado
+- **Refinamento da métrica `variacao_periodos`:** Formalizado suporte a comparação entre trimestres (`YYYY-T1..T4`) e detalhamento por dimensão (`marca` ou `segmento`) com cálculo de participação de mercado em cada período (`share_anterior`, `share_atual`) e ganho/perda de participação em pontos percentuais (`delta_share_pp` em `p.p.`), atendendo às perguntas executivas compostas da diretoria.
+
 ## [0.1.0] - 2026-11-08
 ### Adicionado
 - **Integração LLM Homologada:** Configurado suporte ao provedor Anthropic utilizando o modelo **Claude Haiku 5.5** esclusivamente para tradução de intenção em `QuerySpec` (sem envio de dados do banco e sem parâmetro `temperature`).

@@ -130,4 +130,32 @@ def test_load_dotenv_file_reads_key_without_hardcoding(
     assert client.api_key == "sk-ant-test-123"
 
 
+@pytest.mark.skipif(not DB_PATH.exists(), reason="Banco sintetico local nao encontrado")
+def test_complex_quarter_comparison_with_brand_share_and_gainers_losers(
+    offline_bot: EmplacamentosChatbot,
+) -> None:
+    """Valida a pergunta executiva complexa comparando T1 2025 vs T1 2026 com YoY e ganho/perda de share por marca."""
+    from emplacamentos_bot.llm.client import extract_json_object
+
+    # 1. Testa que extract_json_object lida com texto antes/depois do JSON sem dar Expecting value
+    messy_llm_output = 'Aqui está a análise solicitada:\n```json\n{"intent": "query", "metric": "variacao_periodos"}\n```\nObrigado!'
+    parsed = extract_json_object(messy_llm_output)
+    assert parsed is not None
+    assert parsed["metric"] == "variacao_periodos"
+
+    # 2. Testa a pergunta completa no pipeline
+    q = (
+        "Compare os emplacamentos de caminhões novos no Brasil entre janeino e março de 2025 "
+        "e janeiro e março de 2026. Apresente o volume total de cada período, a variação "
+        "percentual ano contra ano (YoY), a participação de mercada por marca e identifique "
+        "quais fabricantes ganharam ou perderam participação."
+    )
+    res = offline_bot.ask(q)
+    assert res.behavior == "responder"
+    assert "2026-T1 vs. 2025-T1" in res.answer_text
+    assert "Ganharam participação:" in res.answer_text
+    assert "Perderam participação:" in res.answer_text
+
+
+
 

@@ -22,7 +22,7 @@ DB_PATH = ROOT_DIR / "data" / "emplacamentos_synthetic.db"
 def test_load_semantic_catalog() -> None:
     """Valida que semantic/emplacamentos.yaml carrega com todas as 5 metricas e regras."""
     catalog = load_semantic_catalog()
-    assert catalog.version == "0.1.0"
+    assert catalog.version == "0.1.1"
     assert catalog.governance.min_k_anonymity == 5
     assert catalog.governance.require_explicit_period is True
     assert set(catalog.metrics.keys()) == {

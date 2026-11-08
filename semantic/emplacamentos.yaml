@@ -1,5 +1,5 @@
-# Camada Semantica de Emplacamentos (v0.1.0)
-version: "0.1.0"
+# Camada Semantica de Emplacamentos (v0.1.1)
+version: "0.1.1"
 owner: "Diretoria e Gerencia de Emplacamentos"
 updated_at: "2026-11-08"
 description: >
@@ -410,11 +410,12 @@ metrics:
   variacao_periodos:
     name: "Variação entre Períodos"
     definition: >
-      Comparação absoluta (Volume_atual - Volume_anterior) e percentual
-      (((Volume_atual - Volume_anterior) / Volume_anterior) * 100) do volume de emplacamentos
-      entre dois períodos explícitos (mês contra mês ou ano contra ano).
+      Comparação absoluta (Volume_atual - Volume_anterior), percentual
+      (((Volume_atual - Volume_anterior) / Volume_anterior) * 100) e, quando agrupada por marca
+      ou segmento, variação de participação de mercado em pontos percentuais (Share_atual - Share_anterior em p.p.)
+      entre dois períodos explícitos (mês contra mês, trimestre contra trimestre ou ano contra ano).
     formula: "((volume_atual - volume_anterior) * 100.0) / NULLIF(volume_anterior, 0)"
-    unit: "%"
+    unit: "% e p.p."
     default_filters: []
     exceptions: "Exige dois períodos definidos (período base e período de comparação). Se volume_anterior = 0, a variação percentual é nula/indefinida."
     synonyms:
@@ -422,11 +423,15 @@ metrics:
       - "crescimento"
       - "queda"
       - "comparação entre períodos"
+      - "compare os emplacamentos"
       - "mês contra mês"
+      - "trimestre contra trimestre"
       - "ano contra ano"
+      - "ganharam ou perderam participação"
+      - "variação de market share"
       - "mom"
       - "yoy"
-    numeric_example: "O volume passou de 9.500 para 9.615 unidades (+115 unidades, variação de +1,21%)."
+    numeric_example: "O volume passou de 9.500 para 9.615 unidades (+115 unidades, variação de +1,21%), com ganho de +0,22 p.p. de share."
 
 default_filters:
   situacao_valida:

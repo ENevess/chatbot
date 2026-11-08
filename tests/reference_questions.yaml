@@ -195,3 +195,12 @@
   resposta_esperada: "não existe na camada semântica"
   sql_gabarito: ""
   comportamento_esperado: recusar
+
+- id: Q013
+  pergunta: "Compare os emplacamentos de caminhões novos no Brasil entre janeino e março de 2025 e janeiro e março de 2026. Apresente o volume total de cada período, a variação percentual ano contra ano (YoY), a participação de mercada por marca e identifique quais fabricantes ganharam ou perderam participação."
+  nivel: media
+  central: true
+  resposta_esperada: "Ganharam participação"
+  sql_gabarito: ""
+  comportamento_esperado: responder
+

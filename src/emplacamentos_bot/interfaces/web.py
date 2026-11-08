@@ -91,41 +91,58 @@ MOBILE_FIRST_HTML = """<!DOCTYPE html>
     }
     .disclaimer-banner {
       background: rgba(245, 158, 11, 0.12);
-      border-bottom: 1px solid rgba(245, 158, 11, 0.35);
+      border: 1px solid rgba(245, 158, 11, 0.35);
+      border-radius: 10px;
       color: #fcd34d;
-      font-size: 0.78rem;
-      padding: 6px 16px;
-      text-align: center;
+      font-size: 0.76rem;
+      padding: 8px 12px;
+      text-align: left;
       font-weight: 500;
-      flex-shrink: 0;
+    }
+    .suggestions-accordion {
+      background: rgba(30, 41, 59, 0.75);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 10px 12px;
+      margin-top: 0;
+    }
+    .suggestions-accordion > summary {
+      font-size: 0.82rem;
+      color: #93c5fd;
+      font-weight: 600;
+      cursor: pointer;
+      list-style: none;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .suggestions-accordion > summary::-webkit-details-marker {
+      display: none;
     }
     .chips-section {
       display: flex;
       flex-direction: column;
-      gap: 6px;
-      padding: 10px 16px;
-      background: rgba(30, 41, 59, 0.6);
-      border-bottom: 1px solid var(--border);
-      flex-shrink: 0;
+      gap: 8px;
+      margin-top: 10px;
     }
     .chips-row {
       display: flex;
       flex-wrap: wrap;
-      gap: 8px;
+      gap: 6px;
       align-items: center;
     }
     .chips-label {
-      font-size: 0.72rem;
+      font-size: 0.7rem;
       color: var(--text-muted);
       font-weight: 600;
       text-transform: uppercase;
-      margin-right: 4px;
+      width: 100%;
     }
     .chip {
       background: var(--surface-light);
       color: var(--text);
       border: 1px solid var(--border);
-      padding: 5px 11px;
+      padding: 6px 11px;
       border-radius: 999px;
       font-size: 0.76rem;
       cursor: pointer;
@@ -274,28 +291,34 @@ MOBILE_FIRST_HTML = """<!DOCTYPE html>
     </div>
   </header>
 
-  <div class="disclaimer-banner">
-    ⚠️ <strong>AVISO DE DADOS SINTÉTICOS:</strong> Todos os dados de emplacamentos, chassis, clientes e concessionárias utilizados neste ambiente são <strong>100% sintéticos (fictícios)</strong>, gerados exclusivamente para validação da camada semântica desta PoC.
-  </div>
-
-  <div class="chips-section">
-    <div class="chips-row">
-      <span class="chips-label">Consultas & Share:</span>
-      <button class="chip" onclick="sendQuick('Quantos caminhões foram emplacados no último mês?')">📊 Volume último mês</button>
-      <button class="chip" onclick="sendQuick('Qual a participação de mercado da DAF em 2026 apenas no segmento pesado?')">🎯 Share DAF Pesados 2026</button>
-      <button class="chip" onclick="sendQuick('Qual o volume de emplacamentos por região em 2025?')">🗺️ Volume por Região 2025</button>
-      <button class="chip" onclick="sendQuick('Qual a participação por segmento em 2025?')">⚖️ Pesado vs Semi-Pesado</button>
-    </div>
-    <div class="chips-row">
-      <span class="chips-label">Rankings & Governança:</span>
-      <button class="chip" onclick="sendQuick('Qual o top 5 ranking de modelos mais emplacados em 2025?')">🏆 Top 5 Modelos 2025</button>
-      <button class="chip" onclick="sendQuick('Qual foi a variação de emplacamentos de 2025 contra 2024?')">📈 Variação 2025 vs 2024</button>
-      <button class="chip" onclick="sendQuick('Quantos caminhões da VOLVO foram emplacados?')">❓ Teste Ambiguidade (Sem Período)</button>
-      <button class="chip" onclick="sendQuick('Qual o volume de emplacamentos por dealer em 2025?')">🏢 Teste Ambiguidade (Dealer)</button>
-    </div>
-  </div>
-
   <main id="chat-container">
+    <div class="disclaimer-banner">
+      ⚠️ <strong>AVISO DE DADOS SINTÉTICOS:</strong> Todos os dados de emplacamentos, chassis, clientes e concessionárias utilizados neste ambiente são <strong>100% sintéticos (fictícios)</strong>, gerados exclusivamente para validação da camada semântica desta PoC.
+    </div>
+
+    <details id="suggestions-box" class="suggestions-accordion" open>
+      <summary>
+        <span>💡 Perguntas Padrão para Teste</span>
+        <span style="font-size: 0.72rem; color: var(--text-muted);">toque para abrir/fechar ▾</span>
+      </summary>
+      <div class="chips-section">
+        <div class="chips-row">
+          <span class="chips-label">Consultas & Share:</span>
+          <button class="chip" onclick="sendQuick('Quantos caminhões foram emplacados no último mês?')">📊 Volume último mês</button>
+          <button class="chip" onclick="sendQuick('Qual a participação de mercado da DAF em 2026 apenas no segmento pesado?')">🎯 Share DAF Pesados 2026</button>
+          <button class="chip" onclick="sendQuick('Qual o volume de emplacamentos por região em 2025?')">🗺️ Volume por Região 2025</button>
+          <button class="chip" onclick="sendQuick('Qual a participação por segmento em 2025?')">⚖️ Pesado vs Semi-Pesado</button>
+        </div>
+        <div class="chips-row">
+          <span class="chips-label">Rankings & Governança:</span>
+          <button class="chip" onclick="sendQuick('Qual o top 5 ranking de modelos mais emplacados em 2025?')">🏆 Top 5 Modelos 2025</button>
+          <button class="chip" onclick="sendQuick('Qual foi a variação de emplacamentos de 2025 contra 2024?')">📈 Variação 2025 vs 2024</button>
+          <button class="chip" onclick="sendQuick('Quantos caminhões da VOLVO foram emplacados?')">❓ Teste Ambiguidade (Sem Período)</button>
+          <button class="chip" onclick="sendQuick('Qual o volume de emplacamentos por dealer em 2025?')">🏢 Teste Ambiguidade (Dealer)</button>
+        </div>
+      </div>
+    </details>
+
     <div class="msg bot">
       <span class="status-pill status-responder">Pronto</span>
       <div class="answer-line">
@@ -340,6 +363,9 @@ MOBILE_FIRST_HTML = """<!DOCTYPE html>
     async function submitQuestion() {
       const q = input.value.trim();
       if (!q) return;
+
+      const suggestionsBox = document.getElementById('suggestions-box');
+      if (suggestionsBox) suggestionsBox.removeAttribute('open');
 
       const userDiv = document.createElement('div');
       userDiv.className = 'msg user';

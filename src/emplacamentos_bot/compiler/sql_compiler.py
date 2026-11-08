@@ -386,11 +386,15 @@ class SQLCompiler:
         joins = self._collect_joins(dimensions, spec.filters)
         join_str = "\n".join(joins)
 
-        time_expr = (
-            "strftime('%Y', e.data_emplacamento)"
-            if spec.period.kind == "year"
-            else "strftime('%Y-%m', e.data_emplacamento)"
-        )
+        if spec.period.kind == "year":
+            time_expr = "strftime('%Y', e.data_emplacamento)"
+        elif spec.period.kind == "quarter":
+            time_expr = (
+                "strftime('%Y', e.data_emplacamento) || '-T' || "
+                "CAST(((CAST(strftime('%m', e.data_emplacamento) AS INTEGER) - 1) / 3) + 1 AS TEXT)"
+            )
+        else:
+            time_expr = "strftime('%Y-%m', e.data_emplacamento)"
 
         params: dict[str, Any] = {
             "p_curr": str(spec.period.value),
@@ -410,6 +414,64 @@ class SQLCompiler:
         if extra_where:
             where_clause += " AND " + " AND ".join(extra_where)
 
+        period_label = f"{spec.period.value} vs. {spec.period.comparison_value}"
+        filters_str = ", ".join(filter_labels) if filter_labels else "nenhum filtro adicional"
+
+        # Se houver dimensao de quebra (ex.: marca), calcula volume, variacao YoY, share em cada periodo e delta de share (p.p.)
+        if dimensions:
+            dim_name = dimensions[0]
+            dim_expr = " ".join(self.catalog.dimensions[dim_name].sql_expression.split())
+            sql = (
+                "WITH by_dim AS (\n"
+                "  SELECT\n"
+                f"    {dim_expr} AS {dim_name},\n"
+                f"    SUM(CASE WHEN {time_expr} = :p_curr THEN 1 ELSE 0 END) AS volume_atual,\n"
+                f"    SUM(CASE WHEN {time_expr} = :p_prev THEN 1 ELSE 0 END) AS volume_anterior,\n"
+                "    COUNT(e.id_emplacamento) AS _row_count\n"
+                "  FROM emplacamento e\n"
+                f"  {join_str}\n"
+                f"  {where_clause}\n"
+                f"  GROUP BY {dim_name}\n"
+                "),\n"
+                "with_totals AS (\n"
+                "  SELECT\n"
+                f"    {dim_name},\n"
+                "    volume_atual,\n"
+                "    volume_anterior,\n"
+                "    SUM(volume_atual) OVER () AS total_atual,\n"
+                "    SUM(volume_anterior) OVER () AS total_anterior,\n"
+                "    (volume_atual - volume_anterior) AS variacao_absoluta,\n"
+                "    ROUND(((volume_atual - volume_anterior) * 100.0) / NULLIF(volume_anterior, 0), 2) AS valor,\n"
+                "    ROUND(volume_atual * 100.0 / NULLIF(SUM(volume_atual) OVER (), 0), 2) AS share_atual,\n"
+                "    ROUND(volume_anterior * 100.0 / NULLIF(SUM(volume_anterior) OVER (), 0), 2) AS share_anterior,\n"
+                "    _row_count\n"
+                "  FROM by_dim\n"
+                ")\n"
+                "SELECT\n"
+                f"  {dim_name},\n"
+                "  volume_atual,\n"
+                "  volume_anterior,\n"
+                "  total_atual,\n"
+                "  total_anterior,\n"
+                "  variacao_absoluta,\n"
+                "  valor,\n"
+                "  share_atual,\n"
+                "  share_anterior,\n"
+                "  ROUND(share_atual - share_anterior, 2) AS delta_share_pp,\n"
+                "  _row_count\n"
+                "FROM with_totals\n"
+                "ORDER BY volume_atual DESC"
+            )
+            return CompiledQuery(
+                sql=sql,
+                params=params,
+                metric_key=spec.metric or "",
+                metric_name=metric_def.name,
+                metric_definition=metric_def.definition,
+                period_label=period_label,
+                applied_filters_label=filters_str,
+            )
+
         sql = (
             "WITH period_totals AS (\n"
             "  SELECT\n"
@@ -428,9 +490,6 @@ class SQLCompiler:
             "  _row_count\n"
             "FROM period_totals"
         )
-
-        period_label = f"{spec.period.value} vs. {spec.period.comparison_value}"
-        filters_str = ", ".join(filter_labels) if filter_labels else "nenhum filtro adicional"
 
         return CompiledQuery(
             sql=sql,
