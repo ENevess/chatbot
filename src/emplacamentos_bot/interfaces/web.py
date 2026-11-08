@@ -19,7 +19,9 @@ from typing import Any
 from urllib.parse import urlparse
 
 from emplacamentos_bot.bot import EmplacamentosChatbot
+from emplacamentos_bot.executor.safe_executor import ExecutorConfig, SafeSQLExecutor
 from emplacamentos_bot.interfaces.architecture_page import ARCHITECTURE_HTML
+from emplacamentos_bot.interfaces.logs_page import LOGS_VIEWER_HTML
 from emplacamentos_bot.llm.client import create_llm_client
 from emplacamentos_bot.semantic.loader import load_semantic_catalog
 
@@ -193,6 +195,37 @@ MOBILE_FIRST_HTML = """<!DOCTYPE html>
       color: #cbd5e1;
       font-size: 0.76rem;
     }
+    .feedback-bar {
+      margin-top: 10px;
+      padding-top: 8px;
+      border-top: 1px dashed var(--border);
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex-wrap: wrap;
+      font-size: 0.78rem;
+      color: var(--text-muted);
+    }
+    .fb-btn {
+      background: var(--bg);
+      color: var(--text);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 4px 10px;
+      font-size: 0.76rem;
+      cursor: pointer;
+    }
+    .fb-btn:hover { border-color: var(--primary); }
+    .fb-comment-input {
+      background: var(--bg);
+      color: var(--text);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 4px 8px;
+      font-size: 0.76rem;
+      flex: 1;
+      min-width: 180px;
+    }
     footer {
       background: var(--surface);
       border-top: 1px solid var(--border);
@@ -231,7 +264,8 @@ MOBILE_FIRST_HTML = """<!DOCTYPE html>
       <span>🚛 Emplacamentos Bot</span>
       <span class="badge">Camada Semântica v0.1</span>
     </div>
-    <div style="display: flex; align-items: center; gap: 8px;">
+    <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
+      <a href="/logs.html" style="color: #fcd34d; font-size: 0.8rem; text-decoration: none; border: 1px solid var(--border); padding: 6px 10px; border-radius: 8px; background: var(--bg);">📋 Logs & Feedback</a>
       <a href="/arquitetura.html" style="color: #93c5fd; font-size: 0.8rem; text-decoration: none; border: 1px solid var(--border); padding: 6px 10px; border-radius: 8px; background: var(--bg);">📐 Arquitetura</a>
       <select id="provider-select" class="provider-select" title="Provedor de Interpretação">
         <option value="claude" selected>Modo: Claude (Anthropic)</option>
@@ -354,7 +388,21 @@ MOBILE_FIRST_HTML = """<!DOCTYPE html>
                 <pre>${data.sql.replace(/</g, '&lt;')}</pre>
               </details>`;
           }
-          botDiv.innerHTML = `<span class="status-pill ${pillClass}">${data.behavior}</span>${linesHtml}${sqlBlock}`;
+          const iid = data.interaction_id || '';
+          let fbBlock = '';
+          if (data.behavior !== 'esclarecer') {
+            fbBlock = `
+              <div class="feedback-bar" id="fb-${iid}">
+                <span>Avaliar resposta final:</span>
+                <button class="fb-btn" onclick="sendFeedback('${iid}', 'positive', '')">👍 Boa</button>
+                <button class="fb-btn" onclick="openNegComment('${iid}')">👎 Ruim</button>
+              </div>`;
+          }
+          botDiv.dataset.question = data.question || q;
+          botDiv.dataset.sql = data.sql || '';
+          botDiv.dataset.answer = data.answer_text || '';
+          botDiv.id = 'msg-' + iid;
+          botDiv.innerHTML = `<span class="status-pill ${pillClass}">${data.behavior}</span>${linesHtml}${sqlBlock}${fbBlock}`;
         }
         chat.appendChild(botDiv);
       } catch (err) {
@@ -365,6 +413,50 @@ MOBILE_FIRST_HTML = """<!DOCTYPE html>
       } finally {
         btn.disabled = false;
         chat.scrollTop = chat.scrollHeight;
+      }
+    }
+
+    function openNegComment(iid) {
+      const bar = document.getElementById('fb-' + iid);
+      if (!bar) return;
+      bar.innerHTML = `
+        <input type="text" class="fb-comment-input" id="fb-input-${iid}" placeholder="O que saiu errado nesta resposta? (opcional)" />
+        <button class="fb-btn" style="background: var(--danger); color: white; border: none;" onclick="submitNegFeedback('${iid}')">Registrar 👎</button>
+      `;
+      const inp = document.getElementById('fb-input-' + iid);
+      if (inp) inp.focus();
+    }
+
+    function submitNegFeedback(iid) {
+      const inp = document.getElementById('fb-input-' + iid);
+      const comment = inp ? inp.value : '';
+      sendFeedback(iid, 'negative', comment);
+    }
+
+    async function sendFeedback(iid, rating, comment) {
+      const msgDiv = document.getElementById('msg-' + iid);
+      const bar = document.getElementById('fb-' + iid);
+      const payload = {
+        interaction_id: iid,
+        rating: rating,
+        comment: comment || '',
+        question: msgDiv ? msgDiv.dataset.question : '',
+        sql: msgDiv ? msgDiv.dataset.sql : '',
+        answer_text: msgDiv ? msgDiv.dataset.answer : ''
+      };
+      try {
+        await fetch('/api/feedback', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+        if (bar) {
+          bar.innerHTML = rating === 'positive'
+            ? '<span style="color: var(--success);">✓ Avaliação positiva (👍) registrada no log!</span>'
+            : '<span style="color: #fca5a5;">✓ Avaliação negativa (👎) registrada em <a href="/logs.html" style="color:#fcd34d;">/logs.html</a>!</span>';
+        }
+      } catch (e) {
+        if (bar) bar.innerHTML = '<span>Erro ao registrar avaliação.</span>';
       }
     }
   </script>
@@ -388,6 +480,7 @@ def handle_api_ask(payload: dict[str, Any], bot: EmplacamentosChatbot | None = N
             active_bot.pending_clarification_question = pending_question.strip()
         turn = active_bot.ask(question)
         return HTTPStatus.OK, {
+            "interaction_id": turn.interaction_id,
             "question": turn.question,
             "behavior": turn.behavior,
             "answer_text": turn.answer_text,
@@ -397,6 +490,33 @@ def handle_api_ask(payload: dict[str, Any], bot: EmplacamentosChatbot | None = N
         }
     except Exception as exc:
         return HTTPStatus.BAD_REQUEST, {"error": str(exc)}
+
+
+def handle_api_feedback(
+    payload: dict[str, Any],
+    executor: SafeSQLExecutor | None = None,
+) -> tuple[int, dict[str, Any]]:
+    """Processa uma avaliacao (positive | negative) enviada pelo usuario em /api/feedback."""
+    interaction_id = str(payload.get("interaction_id", "")).strip()
+    rating = str(payload.get("rating", "")).strip().lower()
+    if not interaction_id or rating not in ("positive", "negative"):
+        return HTTPStatus.BAD_REQUEST, {
+            "error": "Campos 'interaction_id' e 'rating' ('positive' ou 'negative') são obrigatórios."
+        }
+
+    active_executor = executor or SafeSQLExecutor(
+        allowed_tables=load_semantic_catalog().get_allowed_tables(),
+        config=ExecutorConfig.from_env(),
+    )
+    active_executor.log_feedback(
+        interaction_id=interaction_id,
+        rating=rating,
+        question=str(payload.get("question", "")),
+        answer_text=str(payload.get("answer_text", "")),
+        sql=str(payload.get("sql", "")),
+        comment=str(payload.get("comment", "")),
+    )
+    return HTTPStatus.OK, {"status": "recorded", "interaction_id": interaction_id, "rating": rating}
 
 
 def ensure_database_initialized() -> None:
@@ -435,6 +555,40 @@ class ChatbotWebHandler(BaseHTTPRequestHandler):
             self.wfile.write(body)
             return
 
+        if parsed.path in ("/logs", "/logs.html"):
+            body = LOGS_VIEWER_HTML.encode("utf-8")
+            self.send_response(HTTPStatus.OK)
+            self.send_header("Content-Type", "text/html; charset=utf-8")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+            return
+
+        if parsed.path == "/api/logs":
+            executor = SafeSQLExecutor(
+                allowed_tables=load_semantic_catalog().get_allowed_tables(),
+                config=ExecutorConfig.from_env(),
+            )
+            entries = executor.read_logs(limit=250)
+            body = json.dumps({"entries": entries}, ensure_ascii=False).encode("utf-8")
+            self.send_response(HTTPStatus.OK)
+            self.send_header("Content-Type", "application/json; charset=utf-8")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+            return
+
+        if parsed.path == "/api/logs/download":
+            cfg = ExecutorConfig.from_env()
+            raw_bytes = cfg.log_path.read_bytes() if cfg.log_path.exists() else b""
+            self.send_response(HTTPStatus.OK)
+            self.send_header("Content-Type", "application/x-ndjson; charset=utf-8")
+            self.send_header("Content-Disposition", 'attachment; filename="audit.jsonl"')
+            self.send_header("Content-Length", str(len(raw_bytes)))
+            self.end_headers()
+            self.wfile.write(raw_bytes)
+            return
+
         if parsed.path == "/api/health":
             catalog = load_semantic_catalog()
             body = json.dumps({"status": "ok", "semantic_version": catalog.version}).encode("utf-8")
@@ -449,7 +603,7 @@ class ChatbotWebHandler(BaseHTTPRequestHandler):
 
     def do_POST(self) -> None:
         parsed = urlparse(self.path)
-        if parsed.path == "/api/ask":
+        if parsed.path in ("/api/ask", "/api/feedback"):
             content_length = int(self.headers.get("Content-Length", "0"))
             raw_body = self.rfile.read(content_length).decode("utf-8") if content_length > 0 else "{}"
             try:
@@ -457,7 +611,11 @@ class ChatbotWebHandler(BaseHTTPRequestHandler):
             except json.JSONDecodeError:
                 payload = {}
 
-            status_code, resp_dict = handle_api_ask(payload)
+            if parsed.path == "/api/ask":
+                status_code, resp_dict = handle_api_ask(payload)
+            else:
+                status_code, resp_dict = handle_api_feedback(payload)
+
             body = json.dumps(resp_dict, ensure_ascii=False).encode("utf-8")
             self.send_response(status_code)
             self.send_header("Content-Type", "application/json; charset=utf-8")

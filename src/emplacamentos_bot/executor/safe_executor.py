@@ -7,6 +7,7 @@ import os
 import re
 import sqlite3
 import time
+import uuid
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
@@ -97,6 +98,7 @@ class ExecutionResult:
     suppressed_count: int = 0
     truncated_by_row_limit: bool = False
     execution_time_ms: float = 0.0
+    interaction_id: str = ""
 
 
 class SafeSQLExecutor:
@@ -180,10 +182,12 @@ class SafeSQLExecutor:
         params: dict[str, Any] | None = None,
         question: str = "",
         spec_dict: dict[str, Any] | None = None,
+        interaction_id: str | None = None,
     ) -> ExecutionResult:
         """Valida, executa em modo read-only, aplica k-anonimato e registra auditoria."""
         t0 = time.perf_counter()
         params = params or {}
+        turn_id = interaction_id or uuid.uuid4().hex[:12]
 
         try:
             self.validate_sql(sql)
@@ -238,6 +242,7 @@ class SafeSQLExecutor:
                 suppressed_count=suppressed_cnt,
                 truncated_by_row_limit=truncated,
                 execution_time_ms=elapsed_ms,
+                interaction_id=turn_id,
             )
 
             self.log_audit(
@@ -247,6 +252,7 @@ class SafeSQLExecutor:
                 status="success_suppressed" if suppressed_flag else "success",
                 row_count=len(processed_rows),
                 execution_time_ms=elapsed_ms,
+                interaction_id=turn_id,
             )
             return result
 
@@ -259,6 +265,7 @@ class SafeSQLExecutor:
                 status=f"error:{type(exc).__name__}",
                 error_message=str(exc),
                 execution_time_ms=elapsed_ms,
+                interaction_id=turn_id,
             )
             raise
 
@@ -297,10 +304,15 @@ class SafeSQLExecutor:
         row_count: int = 0,
         error_message: str | None = None,
         execution_time_ms: float = 0.0,
-    ) -> None:
+        interaction_id: str | None = None,
+        answer_text: str | None = None,
+    ) -> str:
         """Registra log estruturado em JSONL sem dados pessoais nem chaves de API."""
+        turn_id = interaction_id or uuid.uuid4().hex[:12]
         self.config.log_path.parent.mkdir(parents=True, exist_ok=True)
-        entry = {
+        entry: dict[str, Any] = {
+            "event_type": "query",
+            "interaction_id": turn_id,
             "timestamp": datetime.now(UTC).isoformat(),
             "question": question,
             "specification": spec_dict or {},
@@ -309,8 +321,76 @@ class SafeSQLExecutor:
             "result_row_count": row_count,
             "execution_time_ms": execution_time_ms,
         }
+        if answer_text:
+            entry["answer_text"] = answer_text
         if error_message:
             entry["error"] = error_message
 
         with self.config.log_path.open("a", encoding="utf-8") as f:
             f.write(json.dumps(entry, ensure_ascii=False) + "\n")
+        return turn_id
+
+    def log_feedback(
+        self,
+        interaction_id: str,
+        rating: str,
+        question: str = "",
+        answer_text: str = "",
+        sql: str = "",
+        comment: str = "",
+    ) -> None:
+        """Registra no log de auditoria a avaliacao do usuario (positive | negative) sobre uma resposta."""
+        if rating not in ("positive", "negative"):
+            raise ValueError("O campo 'rating' deve ser 'positive' ou 'negative'.")
+
+        self.config.log_path.parent.mkdir(parents=True, exist_ok=True)
+        entry = {
+            "event_type": "feedback",
+            "interaction_id": interaction_id,
+            "timestamp": datetime.now(UTC).isoformat(),
+            "rating": rating,
+            "comment": comment.strip(),
+            "question": question,
+            "sql": sql,
+            "answer_text": answer_text,
+        }
+        with self.config.log_path.open("a", encoding="utf-8") as f:
+            f.write(json.dumps(entry, ensure_ascii=False) + "\n")
+
+    def read_logs(self, limit: int = 200) -> list[dict[str, Any]]:
+        """Le os ultimos registros do arquivo de auditoria consolidando feedbacks por interaction_id."""
+        if not self.config.log_path.exists():
+            return []
+
+        raw_lines = self.config.log_path.read_text(encoding="utf-8").splitlines()
+        entries: list[dict[str, Any]] = []
+        feedback_by_id: dict[str, dict[str, Any]] = {}
+
+        for line in raw_lines:
+            if not line.strip():
+                continue
+            try:
+                item = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+
+            if item.get("event_type") == "feedback":
+                iid = item.get("interaction_id")
+                if iid:
+                    feedback_by_id[iid] = {
+                        "rating": item.get("rating"),
+                        "comment": item.get("comment", ""),
+                        "feedback_timestamp": item.get("timestamp"),
+                    }
+                entries.append(item)
+            else:
+                entries.append(item)
+
+        # Anexa tambem o resumo de feedback direto na entrada da query correspondente
+        for entry in entries:
+            if entry.get("event_type", "query") == "query":
+                iid = entry.get("interaction_id")
+                if iid and iid in feedback_by_id:
+                    entry["feedback"] = feedback_by_id[iid]
+
+        return list(reversed(entries[-limit:]))

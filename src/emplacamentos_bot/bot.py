@@ -32,6 +32,7 @@ class BotTurnResult:
     sql: str | None = None
     rows: list[dict[str, Any]] = field(default_factory=list)
     privacy_suppressed: bool = False
+    interaction_id: str = ""
 
 
 class EmplacamentosChatbot:
@@ -74,33 +75,39 @@ class EmplacamentosChatbot:
             compiled = self.compiler.compile(spec)
         except AmbiguousQueryError as exc:
             self.pending_clarification_question = effective_question
-            self.executor.log_audit(
+            ans_text = self.formatter.format_clarification(str(exc))
+            turn_id = self.executor.log_audit(
                 question=effective_question,
                 spec_dict=spec.model_dump(),
                 sql="",
                 status="clarify",
                 error_message=str(exc),
+                answer_text=ans_text,
             )
             return BotTurnResult(
                 question=effective_question,
                 behavior="esclarecer",
-                answer_text=self.formatter.format_clarification(str(exc)),
+                answer_text=ans_text,
                 spec=spec,
+                interaction_id=turn_id,
             )
         except SemanticValidationError as exc:
             self.pending_clarification_question = None
-            self.executor.log_audit(
+            ans_text = self.formatter.format_refusal(str(exc))
+            turn_id = self.executor.log_audit(
                 question=effective_question,
                 spec_dict=spec.model_dump(),
                 sql="",
                 status="refuse",
                 error_message=str(exc),
+                answer_text=ans_text,
             )
             return BotTurnResult(
                 question=effective_question,
                 behavior="recusar",
-                answer_text=self.formatter.format_refusal(str(exc)),
+                answer_text=ans_text,
                 spec=spec,
+                interaction_id=turn_id,
             )
 
         # Esclarecimento resolvido com sucesso: limpa estado pendente
@@ -129,4 +136,5 @@ class EmplacamentosChatbot:
             sql=compiled.sql,
             rows=exec_result.rows,
             privacy_suppressed=exec_result.privacy_suppressed,
+            interaction_id=exec_result.interaction_id,
         )

@@ -5,8 +5,11 @@ from pathlib import Path
 
 import pytest
 
+from emplacamentos_bot.executor.safe_executor import ExecutorConfig, SafeSQLExecutor
 from emplacamentos_bot.interfaces.architecture_page import ARCHITECTURE_HTML
-from emplacamentos_bot.interfaces.web import MOBILE_FIRST_HTML, handle_api_ask
+from emplacamentos_bot.interfaces.logs_page import LOGS_VIEWER_HTML
+from emplacamentos_bot.interfaces.web import MOBILE_FIRST_HTML, handle_api_ask, handle_api_feedback
+from emplacamentos_bot.semantic.loader import load_semantic_catalog
 
 ROOT_DIR = Path(__file__).resolve().parent.parent.parent
 DB_PATH = ROOT_DIR / "data" / "emplacamentos_synthetic.db"
@@ -50,6 +53,42 @@ def test_api_ask_returns_formatted_answer_and_sql() -> None:
     )
     assert status == HTTPStatus.OK
     assert resp["behavior"] == "responder"
+    assert resp["interaction_id"]
     assert "11,62%" in resp["answer_text"]
     assert resp["sql"] is not None
     assert len(resp["rows"]) == 1
+
+
+def test_feedback_logging_and_consolidation(tmp_path: Path) -> None:
+    """Verifica que a avaliacao positiva/negativa e gravada no log e consolidada em read_logs()."""
+    catalog = load_semantic_catalog()
+    cfg = ExecutorConfig(db_path=DB_PATH, log_path=tmp_path / "feedback_audit.jsonl")
+    executor = SafeSQLExecutor(allowed_tables=catalog.get_allowed_tables(), config=cfg)
+
+    turn_id = executor.log_audit(
+        question="Pergunta de teste para feedback",
+        spec_dict={"metric": "volume_emplacamentos"},
+        sql="SELECT COUNT(id_emplacamento) FROM emplacamento",
+        status="success",
+        row_count=1,
+    )
+
+    status, resp = handle_api_feedback(
+        {
+            "interaction_id": turn_id,
+            "rating": "negative",
+            "comment": "Filtrou o período errado",
+            "question": "Pergunta de teste para feedback",
+        },
+        executor=executor,
+    )
+    assert status == HTTPStatus.OK
+    assert resp["rating"] == "negative"
+
+    logs = executor.read_logs()
+    query_entries = [e for e in logs if e.get("event_type") == "query"]
+    assert len(query_entries) == 1
+    assert query_entries[0]["feedback"]["rating"] == "negative"
+    assert query_entries[0]["feedback"]["comment"] == "Filtrou o período errado"
+    assert "/api/logs/download" in LOGS_VIEWER_HTML
+
