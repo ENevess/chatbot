@@ -11,11 +11,12 @@ COPY src ./src
 # Instala o pacote sem dependencias pesadas
 RUN pip install --no-cache-dir -e .
 
-# Variaveis padrao para execucao em nuvem (Railway / Render / Cloud Run)
+# Variaveis padrao para execucao em nuvem (Render / Docker)
 ENV HOST=0.0.0.0
 ENV PORT=8000
-ENV LLM_PROVIDER=mock
-ENV SYNTHETIC_DB_SCALE=0.1
+ENV LLM_PROVIDER=claude
+ENV LLM_MODEL=claude-haiku-5-5
+ENV SYNTHETIC_DB_SCALE=1.0
 
 EXPOSE 8000
 

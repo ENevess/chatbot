@@ -5,6 +5,7 @@ from pathlib import Path
 
 import pytest
 
+from emplacamentos_bot.interfaces.architecture_page import ARCHITECTURE_HTML
 from emplacamentos_bot.interfaces.web import MOBILE_FIRST_HTML, handle_api_ask
 
 ROOT_DIR = Path(__file__).resolve().parent.parent.parent
@@ -19,6 +20,16 @@ def test_mobile_first_html_has_responsive_viewport_and_controls() -> None:
     assert "AVISO DE DADOS SINTÉTICOS" in MOBILE_FIRST_HTML
     assert "100% sintéticos" in MOBILE_FIRST_HTML
     assert MOBILE_FIRST_HTML.count('class="chips-row"') == 2
+    assert "/arquitetura.html" in MOBILE_FIRST_HTML
+
+
+def test_architecture_html_contains_poc_sections() -> None:
+    """Verifica que a pagina /arquitetura.html documenta o pipeline, isolamento da LLM e camada semantica."""
+    assert "Arquitetura da PoC" in ARCHITECTURE_HTML
+    assert "Claude Haiku 5.5" in ARCHITECTURE_HTML
+    assert "777.365" in ARCHITECTURE_HTML
+    assert "k-anonimato" in ARCHITECTURE_HTML
+
 
 
 def test_api_ask_rejects_empty_question() -> None:

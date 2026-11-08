@@ -19,6 +19,7 @@ from typing import Any
 from urllib.parse import urlparse
 
 from emplacamentos_bot.bot import EmplacamentosChatbot
+from emplacamentos_bot.interfaces.architecture_page import ARCHITECTURE_HTML
 from emplacamentos_bot.llm.client import create_llm_client
 from emplacamentos_bot.semantic.loader import load_semantic_catalog
 
@@ -230,10 +231,13 @@ MOBILE_FIRST_HTML = """<!DOCTYPE html>
       <span>🚛 Emplacamentos Bot</span>
       <span class="badge">Camada Semântica v0.1</span>
     </div>
-    <select id="provider-select" class="provider-select" title="Provedor de Interpretação">
-      <option value="claude" selected>Modo: Claude (Anthropic)</option>
-      <option value="mock">Modo: Mock (Offline)</option>
-    </select>
+    <div style="display: flex; align-items: center; gap: 8px;">
+      <a href="/arquitetura.html" style="color: #93c5fd; font-size: 0.8rem; text-decoration: none; border: 1px solid var(--border); padding: 6px 10px; border-radius: 8px; background: var(--bg);">📐 Arquitetura</a>
+      <select id="provider-select" class="provider-select" title="Provedor de Interpretação">
+        <option value="claude" selected>Modo: Claude (Anthropic)</option>
+        <option value="mock">Modo: Mock (Offline)</option>
+      </select>
+    </div>
   </header>
 
   <div class="disclaimer-banner">
@@ -415,6 +419,15 @@ class ChatbotWebHandler(BaseHTTPRequestHandler):
         parsed = urlparse(self.path)
         if parsed.path in ("/", "/index.html"):
             body = MOBILE_FIRST_HTML.encode("utf-8")
+            self.send_response(HTTPStatus.OK)
+            self.send_header("Content-Type", "text/html; charset=utf-8")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+            return
+
+        if parsed.path in ("/arquitetura", "/arquitetura.html"):
+            body = ARCHITECTURE_HTML.encode("utf-8")
             self.send_response(HTTPStatus.OK)
             self.send_header("Content-Type", "text/html; charset=utf-8")
             self.send_header("Content-Length", str(len(body)))
